@@ -1,0 +1,11 @@
+# Forbidden binaries
+program_a
+program_b
+
+# Build files
+*.o
+
+# Temporary files
+io_test_temp.txt
+top_*.txt
+iostat_*.txt

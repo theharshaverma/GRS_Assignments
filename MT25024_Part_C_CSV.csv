@@ -1,0 +1,7 @@
+Program,Workload,ExecutionTime(s)
+program_a,cpu,.485861750
+program_a,mem,258.955174822
+program_a,io,50.639923446
+program_b,cpu,.634639664
+program_b,mem,273.806255413
+program_b,io,40.940187110
