@@ -33,11 +33,11 @@ int main(int argc, char *argv[]) {
             // --- CHILD PROCESS ---
             // The child decides which function to run based on the argument
             if (strcmp(worker_type, "cpu") == 0) {
-                cpu_bound(LOOP_COUNT);
+                cpu(LOOP_COUNT);
             } else if (strcmp(worker_type, "mem") == 0) {
-                memory_bound(LOOP_COUNT);
+                mem(LOOP_COUNT);
             } else if (strcmp(worker_type, "io") == 0) {
-                io_bound(LOOP_COUNT);
+                io(LOOP_COUNT);
             } else {
                 // Handle invalid input safely
                 fprintf(stderr, "Unknown worker type: %s\n", worker_type);

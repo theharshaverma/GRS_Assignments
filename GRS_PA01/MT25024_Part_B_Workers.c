@@ -16,7 +16,7 @@ void cpu(size_t n) {
 }
 
 // 2. Memory Task
-void memory(size_t n) {
+void mem(size_t n) {
     size_t size = 50 * 1024 * 1024; // 50MB
     for (size_t i = 0; i < n; i++) {
         char *buffer = (char *)malloc(size);
