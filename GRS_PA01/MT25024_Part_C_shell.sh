@@ -1,45 +1,67 @@
 #!/bin/bash
+################################################################################
+# Assignment: GRS_PA01
+# Name: Harsha Verma
+# Roll Number: MT25024
+# Description: Part C Automation with taskset, iostat, and top metrics
+################################################################################
 
-# Compile first
+# Compile first using Makefile
 make clean
 make
 
-# Define the programs and workloads
+# Define programs and workloads
 PROGRAMS=("program_a" "program_b")
 WORKLOADS=("cpu" "mem" "io")
 CSV_FILE="MT25024_Part_C_CSV.csv"
 
-# Create CSV Header
-echo "Program,Workload,ExecutionTime(s)" > $CSV_FILE
-echo "Starting measurements..."
+# Create CSV Header with columns: Program+Function, CPU%, Mem, IO
+echo "Program+Function,ExecutionTime(s),CPU%,Mem(KB),IO_Wait" > $CSV_FILE
+
+echo "Starting measurements for Part C..."
 
 for prog in "${PROGRAMS[@]}"; do
     for work in "${WORKLOADS[@]}"; do
         echo "------------------------------------------------"
         echo "Running: ./$prog $work"
 
-        # 1. Start the program in the background to capture PID
-        # We assume 2 workers (default)
-        ./$prog $work & 
+        # 1. Use taskset to pin to CPU 0 as required
+        # 2. Measure execution time using 'time'
+        START=$(date +%s.%N)
+        
+        # Start program in background pinned to CPU 0
+        taskset -c 0 ./$prog $work & 
         PID=$!
 
-        # 2. Run top in batch mode to capture CPU usage of this PID
-        # -b: Batch mode, -n 1: One iteration, -p: Process ID
-        top -b -n 1 -p $PID > "top_${prog}_${work}.txt" &
+        # 3. Use iostat to observe disk statistics
+        iostat -dx 1 2 > "iostat_${prog}_${work}.txt" &
 
-        # 3. Wait for the program to finish and capture time
-        # Using built-in 'time' is tricky inside scripts, so we use start/end seconds
-        START=$(date +%s.%N)
+        # 4. Use top to record CPU% and Memory
+        # We capture one batch of the specific PID
+        top -b -n 1 -p $PID | grep "$PID" > "top_raw_${prog}_${work}.txt"
+
+        # Wait for the program to finish
         wait $PID
         END=$(date +%s.%N)
 
-        # Calculate duration
+        # Data Extraction
         DURATION=$(echo "$END - $START" | bc)
-        echo "Finished $prog $work in $DURATION seconds"
+        
+        # Extract CPU% (9th col) and Mem (6th col - RES) from top output
+        CPU_USAGE=$(awk '{print $9}' "top_raw_${prog}_${work}.txt")
+        MEM_USAGE=$(awk '{print $6}' "top_raw_${prog}_${work}.txt")
+        
+        # Extract Avg IO Wait from iostat (look for 'iowait' in the avg-cpu row)
+        IO_WAIT=$(grep -A 1 "avg-cpu" "iostat_${prog}_${work}.txt" | tail -n 1 | awk '{print $4}')
 
-        # Save simple stats to CSV
-        echo "$prog,$work,$DURATION" >> $CSV_FILE
+        echo "Finished: $prog+$work | Time: $DURATION | CPU: $CPU_USAGE% | Mem: $MEM_USAGE | IO: $IO_WAIT"
+
+        # Save to CSV
+        echo "$prog+$work,$DURATION,$CPU_USAGE,$MEM_USAGE,$IO_WAIT" >> $CSV_FILE
     done
 done
 
-echo "Done! Results saved to $CSV_FILE"
+# Cleanup temporary raw files
+rm top_raw_*.txt
+echo "------------------------------------------------"
+echo "Done! Part C results saved to $CSV_FILE"
