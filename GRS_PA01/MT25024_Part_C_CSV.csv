@@ -1,7 +1,7 @@
-Program,Workload,ExecutionTime(s)
-program_a,cpu,.450930338
-program_a,mem,519.637429316
-program_a,io,49.949477594
-program_b,cpu,.624407854
-program_b,mem,250.024873727
-program_b,io,46.628584127
+Program+Function,CPU%,Mem(KB),IO(%util)
+program_a+cpu,100.0,2560,0.51
+program_a+mem,106.0,104764,46.03
+program_a+io,2.7,4081,2.00
+program_b+cpu,55.0,960,0.51
+program_b+mem,106.1,103698,1.60
+program_b+io,4.6,2292,1.20

@@ -17,7 +17,11 @@ $(EXEC_B): $(PROG_B_SRC) $(WORKER_SRC)
 	$(CC) $(CFLAGS) -o $(EXEC_B) $(PROG_B_SRC) $(WORKER_SRC) -lm
 
 clean:
-	# Removes binaries and object files (Required to avoid 0 marks)
+	# Removes binaries and object files 
 	rm -f $(EXEC_A) $(EXEC_B) *.o
-	# Removes temporary logs created by top/iostat/io-workers
-	rm -f top_*.txt iostat_*.txt io_test_temp.txt
+	# Removes temporary logs created by top/iostat scripts
+	rm -f top_*.txt iostat_*.txt time_*.txt top_log_*.txt
+	# Removes temporary helper files (if created)
+	rm -f io_test_temp.txt
+	# Removes leftover IO worker files if any
+	rm -f io_test_*.bin

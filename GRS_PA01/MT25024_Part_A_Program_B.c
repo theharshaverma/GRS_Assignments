@@ -14,7 +14,12 @@ void *thread_wrapper(void *arg) {
         mem(LOOP_COUNT);
     } else if (strcmp(worker_type, "io") == 0) {
         io(LOOP_COUNT);
+    } else {
+        // Handle invalid input safely (important for demo/viva)
+        fprintf(stderr, "Unknown worker type: %s\n", worker_type);
+        pthread_exit(NULL);
     }
+
     pthread_exit(NULL);
 }
 
@@ -25,7 +30,7 @@ int main(int argc, char *argv[]) {
     }
 
     char *worker_type = argv[1];
-    int num_threads = 2; // Default to 2 threads [cite: 15]
+    int num_threads = 2; // Default to 2 threads 
 
     if (argc > 2) {
         num_threads = atoi(argv[2]);

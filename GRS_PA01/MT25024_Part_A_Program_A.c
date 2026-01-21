@@ -13,16 +13,20 @@ int main(int argc, char *argv[]) {
     }
 
     char *worker_type = argv[1];
-    int num_processes = 2; // Default to 2 processes as per Part A [cite: 14]
-    
+    int num_processes = 2; // Default to 2 child processes as per Part A
+
     // Allow changing number of processes for Part D (Scaling)
     if (argc > 2) {
         num_processes = atoi(argv[2]);
     }
 
-    printf("Starting Program A: Creating %d child processes for '%s' task...\n", num_processes, worker_type);
+    // Store child PIDs
+    pid_t pids[num_processes];
 
-    // 2. Loop to create the exact number of child processes
+    printf("Starting Program A: Creating %d child processes for '%s' task...\n",
+           num_processes, worker_type);
+
+    // 2. Create exactly num_processes children
     for (int i = 0; i < num_processes; i++) {
         pid_t pid = fork();
 
@@ -31,7 +35,6 @@ int main(int argc, char *argv[]) {
             exit(1);
         } else if (pid == 0) {
             // --- CHILD PROCESS ---
-            // The child decides which function to run based on the argument
             if (strcmp(worker_type, "cpu") == 0) {
                 cpu(LOOP_COUNT);
             } else if (strcmp(worker_type, "mem") == 0) {
@@ -39,20 +42,21 @@ int main(int argc, char *argv[]) {
             } else if (strcmp(worker_type, "io") == 0) {
                 io(LOOP_COUNT);
             } else {
-                // Handle invalid input safely
                 fprintf(stderr, "Unknown worker type: %s\n", worker_type);
                 exit(1);
             }
-            // CRITICAL: Child must exit here, or it will continue the loop and fork more children!
-            exit(0); 
+
+            // Child must exit to avoid re-forking
+            exit(0);
+        } else {
+            // --- PARENT PROCESS ---
+            pids[i] = pid;  // store child PID
         }
-        // --- PARENT PROCESS ---
-        // Parent does nothing here; it just loops back to fork the next child.
     }
 
-    // 3. Parent waits for ALL child processes to finish
+    // 3. Parent waits for each specific child
     for (int i = 0; i < num_processes; i++) {
-        wait(NULL);
+        waitpid(pids[i], NULL, 0);
     }
 
     printf("Program A: All children finished.\n");

@@ -4,6 +4,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <math.h>
+#include <pthread.h>
 
 // 1. CPU Task
 void cpu(size_t n) {
@@ -12,36 +13,73 @@ void cpu(size_t n) {
         for (int j = 0; j < 1000; j++) {
             result += sin(j) * cos(j);
         }
+        (void)result; // prevent optimization
     }
 }
 
-// 2. Memory Task
+// 2. Memory Task (allocate once, touch memory repeatedly)
 void mem(size_t n) {
-    size_t size = 50 * 1024 * 1024; // 50MB
-    for (size_t i = 0; i < n; i++) {
-        char *buffer = (char *)malloc(size);
-        if (buffer) {
-            memset(buffer, 0, size);
-            free(buffer);
-        }
+    const size_t size = 50UL * 1024UL * 1024UL; // 50MB
+    const size_t stride = 64;                  // cache-line stride
+
+    char *buffer = (char *)malloc(size);
+    if (!buffer) {
+        perror("malloc failed in mem()");
+        return;
     }
+
+    // First-touch to ensure pages are mapped
+    memset(buffer, 1, size);
+
+    for (size_t iter = 0; iter < n; iter++) {
+        for (size_t off = 0; off < size; off += stride) {
+            buffer[off] ^= (char)(iter & 0xFF);
+        }
+
+        // Prevent compiler from optimizing loop away
+        volatile char sink = buffer[(iter * 4096) % size];
+        (void)sink;
+    }
+
+    free(buffer);
 }
 
 // 3. IO Task
 void io(size_t n) {
-    const char *filename = "io_test_temp.txt";
-    const char *data = "Writing data to disk for IO test.\n";
-    size_t len = strlen(data);
+    char filename[64];
+
+    // Unique filename per thread
+    snprintf(filename, sizeof(filename),
+             "io_test_%lu.bin", (unsigned long)pthread_self());
+
+    const size_t BUF_SIZE = 256UL * 1024UL;
+    const size_t FSYNC_EVERY = 10;
+
+    char *buf = (char *)malloc(BUF_SIZE);
+    if (!buf) {
+        perror("malloc failed in io()");
+        return;
+    }
+    memset(buf, 'A', BUF_SIZE);
 
     for (size_t i = 0; i < n; i++) {
-        FILE *fp = fopen(filename, "w");
-        if (fp) {
-            for (int j = 0; j < 100; j++) {
-                fwrite(data, 1, len, fp);
-            }
-            fsync(fileno(fp)); // Force write to disk
-            fclose(fp);
+        FILE *fp = fopen(filename, "wb");
+        if (!fp) {
+            perror("fopen failed in io()");
+            break;
         }
-        remove(filename);
+
+        fwrite(buf, 1, BUF_SIZE, fp);
+
+        if ((i % FSYNC_EVERY) == 0) {
+            fflush(fp);
+            fsync(fileno(fp));
+        }
+
+        fclose(fp);
     }
+
+    remove(filename);
+    free(buf);
 }
+
