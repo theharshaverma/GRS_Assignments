@@ -29,7 +29,7 @@ This repository contains the complete implementation and analysis for PA01: Proc
 MT25024_Report.pdf – Final report with screenshots, plots, and analysis
 
 ## How to Build
-make
+make.
 This generates program_a and program_b. Compiled binaries are not committed to the repository as per assignment rules.
 
 ## How to Run
