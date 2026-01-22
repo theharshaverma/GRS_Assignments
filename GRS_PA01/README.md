@@ -55,7 +55,7 @@ This script:
 - All program executions and measurements automated using shell scripts
 
 ### AI Usage Declaration
-I tools were used for assistance in understanding concepts and refining explanations. All code was written, reviewed, and fully understood.Experimental execution and analysis were performed manually.
+AI tools were used for assistance in understanding concepts, debugging issues, refining explanations, and supporting experimental analysis. All code was written by me, thoroughly reviewed, and fully understood. Experimental execution, debugging, and performance analysis were conducted by me with AI used as a supportive aid.
 
 ### Notes
 - No binaries or object files are committed (enforced via .gitignore)
