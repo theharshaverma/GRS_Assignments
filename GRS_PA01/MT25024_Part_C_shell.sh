@@ -3,8 +3,8 @@
 # Assignment: GRS_PA01
 # Name: Harsha Verma
 # Roll Number: MT25024
-# Description: Part C Automation with taskset, top sampling, iostat
-# Output: Program+Function, CPU%, Mem(KB), IO(%util)
+# Description: Part C Automation with taskset, top sampling, iostat + time
+# Output CSV: MT25024_Part_C_CSV.csv (CPU/Mem/IO + Time_real)
 ################################################################################
 
 set -u
@@ -22,6 +22,8 @@ need_cmd sort
 need_cmd paste
 need_cmd kill
 need_cmd sleep
+need_cmd xargs
+need_cmd date
 
 # -------- Compile --------
 make clean
@@ -29,9 +31,12 @@ make
 
 PROGRAMS=("program_a" "program_b")
 WORKLOADS=("cpu" "mem" "io")
+
 CSV_FILE="MT25024_Part_C_CSV.csv"
 
-echo "Program+Function,CPU%,Mem(KB),IO(%util)" > "$CSV_FILE"
+# One CSV only (include time in same CSV)
+echo "Program+Function,CPU%,Mem(KB),IO(%util),Time_real(s)" > "$CSV_FILE"
+
 echo "Starting measurements for Part C..."
 
 # Get all descendants of a PID (children, grandchildren, ...)
@@ -58,13 +63,16 @@ SAMPLE_SLEEP="0.2"
 for prog in "${PROGRAMS[@]}"; do
   for work in "${WORKLOADS[@]}"; do
     echo "------------------------------------------------"
-    echo "Running: ./$prog $work"
+    echo "Running: time ./$prog $work"
 
     # Start iostat disk stats (1s interval)
     iostat -dx 1 > "iostat_${prog}_${work}.txt" 2>/dev/null &
     IOSTAT_PID=$!
 
-    # Run program pinned to CPU0
+    # Start time (wall clock)
+    START_T=$(date +%s.%N)
+
+    # Run program pinned to CPU0 (PID is REAL program PID -> top works)
     taskset -c 0 ./"$prog" "$work" &
     PID=$!
 
@@ -101,8 +109,14 @@ for prog in "${PROGRAMS[@]}"; do
       sleep "$SAMPLE_SLEEP"
     done
 
+    # Wait for program to end
     wait "$PID" 2>/dev/null
 
+    # End time (wall clock)
+    END_T=$(date +%s.%N)
+    REAL_T=$(awk -v s="$START_T" -v e="$END_T" 'BEGIN{printf "%.2f", (e-s)}')
+
+    # Stop iostat
     kill "$IOSTAT_PID" 2>/dev/null
     wait "$IOSTAT_PID" 2>/dev/null
 
@@ -119,11 +133,11 @@ for prog in "${PROGRAMS[@]}"; do
       END { print (max=="" ? "0.00" : max) }
     ' "iostat_${prog}_${work}.txt")
 
-    # Print ONLY CPU, Mem, IO
-    echo "Finished: $prog+$work | CPU(avg): $CPU_USAGE% | Mem(avg): ${MEM_USAGE}KB | IO(max %util): $IO_UTIL"
+    # Print summary
+    echo "Finished: $prog+$work | CPU(avg): $CPU_USAGE% | Mem(avg): ${MEM_USAGE}KB | IO(max %util): $IO_UTIL | Time(real): ${REAL_T}s"
 
-    # CSV with ONLY CPU, Mem, IO
-    echo "$prog+$work,$CPU_USAGE,$MEM_USAGE,$IO_UTIL" >> "$CSV_FILE"
+    # One CSV only (CPU/Mem/IO + Time_real)
+    echo "$prog+$work,$CPU_USAGE,$MEM_USAGE,$IO_UTIL,$REAL_T" >> "$CSV_FILE"
   done
 done
 

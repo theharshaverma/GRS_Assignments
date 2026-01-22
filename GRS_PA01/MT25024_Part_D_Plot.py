@@ -60,12 +60,10 @@ def plot_metric(metric_name: str, out_prefix: str, ylabel: str, workloads=("cpu"
         plt.legend()
         plt.tight_layout()
 
-        png = f"{out_prefix}_{work}.png"
         pdf = f"{out_prefix}_{work}.pdf"
-        plt.savefig(png)
         plt.savefig(pdf)
         plt.close()
-        print(f"Wrote {png}, {pdf}")
+        print(f"Wrote {pdf}")
 
 # CPU%
 plot_metric("CPU%", "MT25024_Part_D_CPU", "CPU (%)")

@@ -7,5 +7,8 @@ program_b
 
 # Temporary files
 io_test_temp.txt
+io_test_*.bin
 top_*.txt
 iostat_*.txt
+top_log_*.txt
+time_*.txt

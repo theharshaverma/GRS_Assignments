@@ -3,7 +3,8 @@
 # Assignment: GRS_PA01
 # Name: Harsha Verma
 # Roll Number: MT25024
-# Description: Part D Scaling (incremental, terminal + CSV output)
+# Description: Part D Scaling (incremental, terminal + CSV output) + time
+# Output CSV: MT25024_Part_D_CSV.csv (CPU/Mem/IO + Time_real)
 ################################################################################
 
 set -u
@@ -21,6 +22,7 @@ need_cmd paste
 need_cmd kill
 need_cmd sleep
 need_cmd xargs
+need_cmd date
 
 # ---------------- USER INPUT ----------------
 read -p "Program A processes start (e.g., 2): " A_START
@@ -35,7 +37,9 @@ make
 WORKLOADS=("cpu" "mem" "io")
 CSV_FILE="MT25024_Part_D_CSV.csv"
 
-echo "Program,Workload,Count,CPU%,Mem(KB),IO(%util)" > "$CSV_FILE"
+# One CSV only (include time in same CSV)
+echo "Program,Workload,Count,CPU%,Mem(KB),IO(%util),Time_real(s)" > "$CSV_FILE"
+
 echo "Starting Part D measurements..."
 
 # ---------------- Helpers ----------------
@@ -64,13 +68,16 @@ run_one() {
   local count="$3"
 
   echo "------------------------------------------------"
-  echo "Running: ./$prog $work $count"
+  echo "Running: time ./$prog $work $count"
 
   # Start iostat
   iostat -dx 1 > "iostat_${prog}_${work}_${count}.txt" 2>/dev/null &
   IOSTAT_PID=$!
 
-  # Run program (let program print its own messages)
+  # Start wall-clock timing
+  START_T=$(date +%s.%N)
+
+  # Run program pinned to CPU0 (PID is REAL program PID -> top works)
   taskset -c 0 ./"$prog" "$work" "$count" &
   PID=$!
 
@@ -101,7 +108,14 @@ run_one() {
     sleep "$SAMPLE_SLEEP"
   done
 
+  # Wait for program to end
   wait "$PID" 2>/dev/null
+
+  # End wall-clock timing
+  END_T=$(date +%s.%N)
+  REAL_T=$(awk -v s="$START_T" -v e="$END_T" 'BEGIN{printf "%.2f", (e-s)}')
+
+  # Stop iostat
   kill "$IOSTAT_PID" 2>/dev/null
   wait "$IOSTAT_PID" 2>/dev/null
 
@@ -115,10 +129,10 @@ run_one() {
   ' "iostat_${prog}_${work}_${count}.txt")
 
   # ----- REQUIRED TERMINAL PRINT -----
-  echo "Finished: ${prog}+${work}+${count} | CPU(avg): ${CPU}% | Mem(avg): ${MEM}KB | IO(max %util): ${IO}"
+  echo "Finished: ${prog}+${work}+${count} | CPU(avg): ${CPU}% | Mem(avg): ${MEM}KB | IO(max %util): ${IO} | Time(real): ${REAL_T}s"
 
-  # ----- CSV -----
-  echo "${prog},${work},${count},${CPU},${MEM},${IO}" >> "$CSV_FILE"
+  # ----- ONE CSV ONLY -----
+  echo "${prog},${work},${count},${CPU},${MEM},${IO},${REAL_T}" >> "$CSV_FILE"
 }
 
 # ---------------- Program A ----------------

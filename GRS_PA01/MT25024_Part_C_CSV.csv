@@ -1,7 +1,7 @@
-Program+Function,CPU%,Mem(KB),IO(%util)
-program_a+cpu,100.0,2560,0.51
-program_a+mem,106.0,104764,46.03
-program_a+io,2.7,4081,2.00
-program_b+cpu,55.0,960,0.51
-program_b+mem,106.1,103698,1.60
-program_b+io,4.6,2292,1.20
+Program+Function,CPU%,Mem(KB),IO(%util),Time_real(s)
+program_a+cpu,60.0,1280,0.49,1.19
+program_a+mem,107.5,104644,1.20,102.45
+program_a+io,2.8,4081,4.04,142.83
+program_b+cpu,55.0,960,0.47,1.08
+program_b+mem,108.0,103947,38.40,105.33
+program_b+io,4.2,2304,25.60,148.49
