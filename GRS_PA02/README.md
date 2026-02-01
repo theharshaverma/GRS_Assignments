@@ -41,24 +41,24 @@ sudo ip netns exec ns_c ip link set veth_c up
 sudo ip netns exec ns_c ping -c 1 10.200.1.1
 ```
 
-### Running the Server
+### Running the Server (A1)
 Running the the server inside the server namespace:
 ```bash
-sudo ip netns exec ns_s ./server <msg_size>
+sudo ip netns exec ns_s ./a1_server <msg_size>
 ```
 eg: 
 ```bash
-sudo ip netns exec ns_s ./server 65536
+sudo ip netns exec ns_s ./a1_server 65536
 ```
 
-### Running the Client 
+### Running the Client (A1)
 Run the client inside the client namespace:
 ```bash
-sudo ip netns exec ns_c ./client <server_ip> <port> <msg_size> <threads> <duration_sec>
+sudo ip netns exec ns_c ./a1_client <server_ip> <port> <msg_size> <threads> <duration_sec>
 ```
 eg:
 ```bash
-sudo ip netns exec ns_c ./client 10.200.1.1 8989 65536 4 10
+sudo ip netns exec ns_c ./a1_client 10.200.1.1 8989 65536 4 10
 ```
 Each client thread reports throughput at the end of execution.
 
@@ -69,3 +69,24 @@ sudo ip netns del ns_c 2>/dev/null
 sudo ip link del veth_s 2>/dev/null
 ```
 
+## Part A2
+### Overview
+Part A2 extends Part A1 by implementing a structured server-to-client message using **sendmsg()/recvmsg()** with **scatter–gather I/O (iovec)**. Each message consists of **8 dynamically allocated string fields**.
+
+### Running the Server (A2)
+```bash
+sudo ip netns exec ns_s ./a2_server <msg_size>
+```
+eg: 
+```bash
+sudo ip netns exec ns_s ./a2_server 65536
+```
+
+### Running the Client (A2)
+```bash
+sudo ip netns exec ns_c ./a2_client <server_ip> <port> <msg_size> <threads> <duration_sec>
+```
+eg: 
+```bash
+sudo ip netns exec ns_c ./a2_client 10.200.1.1 8989 65536 4 10
+```

@@ -1,3 +1,5 @@
-server
-client
+a1_server
+a1_client
+a2_client
+a2_server
 *.o
