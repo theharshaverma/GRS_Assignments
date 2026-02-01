@@ -1,6 +1,8 @@
 # GRS_PA02 - Network I/O
-## Name- Harsha Verma
-## Roll No-MT25024
+### Course: Graduate Systems (CSE638)
+### Assignment: PA02 – Network I/O
+### Name: Harsha Verma
+### Roll Number: MT25024
 
 ## Part A1
 ### Overview
