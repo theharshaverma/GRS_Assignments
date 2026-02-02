@@ -15,16 +15,17 @@ Representative prompts used include:
 All code in this file was written, reviewed, and fully understood.
 */
 
+#include <arpa/inet.h>
+#include <errno.h>
+#include <netinet/tcp.h>   // TCP_NODELAY (optional)
+#include <pthread.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <stdbool.h>
-#include <pthread.h>
-#include <errno.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
+#include <unistd.h>
 
 #define SERVERPORT 8989
 #define SERVER_BACKLOG 128
@@ -49,7 +50,6 @@ static void free_msg8(msg8_t *m) {
 
 static int alloc_msg8(msg8_t *m, size_t total) {
     memset(m, 0, sizeof(*m));
-
     if (total < 8) return -1;
 
     size_t base = total / 8;
@@ -57,8 +57,8 @@ static int alloc_msg8(msg8_t *m, size_t total) {
 
     for (int i = 0; i < 8; i++) {
         m->flen[i] = base + (i == 7 ? rem : 0);
+        if (m->flen[i] == 0) m->flen[i] = 1;
 
-        // With total>=8, base>=1 => safe; no 0-sized fields
         m->field[i] = (char*)malloc(m->flen[i]);
         if (!m->field[i]) {
             free_msg8(m);
@@ -69,7 +69,6 @@ static int alloc_msg8(msg8_t *m, size_t total) {
 }
 
 static void fill_msg8(msg8_t *m) {
-    // Fill each field with a distinct byte pattern (debug-friendly)
     for (int i = 0; i < 8; i++) {
         memset(m->field[i], (int)('A' + i), m->flen[i]);
     }
@@ -77,8 +76,9 @@ static void fill_msg8(msg8_t *m) {
 
 /* sendmsg() until all bytes across iovecs are sent */
 static int sendmsg_all(int fd, const struct iovec *iov_in, int iovcnt_in) {
-    struct iovec iov[8];
     if (iovcnt_in > 8) return -1;
+
+    struct iovec iov[8];
     memcpy(iov, iov_in, (size_t)iovcnt_in * sizeof(struct iovec));
     int iovcnt = iovcnt_in;
 
@@ -97,7 +97,7 @@ static int sendmsg_all(int fd, const struct iovec *iov_in, int iovcnt_in) {
 
         size_t sent = (size_t)n;
 
-        // Consume 'sent' bytes from iov[]
+        // Consume 'sent' bytes
         size_t left = sent;
         int idx = 0;
         while (idx < iovcnt && left > 0) {
@@ -118,12 +118,12 @@ static int sendmsg_all(int fd, const struct iovec *iov_in, int iovcnt_in) {
     return 0;
 }
 
-/* recv exactly len bytes into buf (handles partial recv) */
+/* recv exactly len bytes into buf */
 static int recv_all(int fd, void *buf, size_t len) {
     size_t got = 0;
     while (got < len) {
         ssize_t r = recv(fd, (char*)buf + got, len - got, 0);
-        if (r == 0) return 0; // closed
+        if (r == 0) return 0;
         if (r < 0) {
             if (errno == EINTR) continue;
             return -1;
@@ -137,7 +137,10 @@ static void *handle_connection(void *arg) {
     int clientSocket = *(int*)arg;
     free(arg);
 
-    // Allocate the 8 heap fields once per connection (still satisfies requirement)
+    // Optional: reduce trigger latency
+    int one = 1;
+    setsockopt(clientSocket, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+
     msg8_t m;
     if (alloc_msg8(&m, g_msgSize) != 0) {
         perror("alloc_msg8");
@@ -145,23 +148,23 @@ static void *handle_connection(void *arg) {
         return NULL;
     }
 
+    // Build iov pointing to the 8 heap fields
     struct iovec iov[8];
     for (int i = 0; i < 8; i++) {
         iov[i].iov_base = m.field[i];
         iov[i].iov_len  = m.flen[i];
     }
 
+    // ✅ OPTIMIZATION: fill once per connection (no 64KB memset per trigger)
+    fill_msg8(&m);
+
     char trigger[8];
 
     while (true) {
         int rc = recv_all(clientSocket, trigger, sizeof(trigger));
-        if (rc == 0) break;          // client closed
+        if (rc == 0) break;
         if (rc < 0) { perror("recv"); break; }
 
-        // Prepare message contents
-        fill_msg8(&m);
-
-        // Send 8-field message using sendmsg + iovec
         if (sendmsg_all(clientSocket, iov, 8) != 0) {
             perror("sendmsg");
             break;
@@ -174,7 +177,6 @@ static void *handle_connection(void *arg) {
 }
 
 int main(int argc, char **argv) {
-    // Allow msg size from CLI: ./a2_server <msgSize>
     if (argc >= 2) {
         long v = strtol(argv[1], NULL, 10);
         if (v > 0) g_msgSize = (size_t)v;
@@ -185,7 +187,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    const size_t MaxMsgSize = 10ULL * 1024ULL * 1024ULL; // 10MB cap
+    const size_t MaxMsgSize = 10ULL * 1024ULL * 1024ULL;
     if (g_msgSize > MaxMsgSize) {
         fprintf(stderr, "ERROR: msgSize too big (max %zu, got %zu)\n", MaxMsgSize, g_msgSize);
         return 1;
@@ -236,7 +238,4 @@ int main(int argc, char **argv) {
         }
         pthread_detach(tid);
     }
-
-    close(serverSocket);
-    return 0;
 }

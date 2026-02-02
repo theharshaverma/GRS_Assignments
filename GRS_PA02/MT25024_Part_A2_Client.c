@@ -15,16 +15,18 @@ All code in this file was written, reviewed, and fully understood.
 */
 
 #define _POSIX_C_SOURCE 199309L
+#include <arpa/inet.h>
+#include <errno.h>
+#include <netinet/tcp.h>   // TCP_NODELAY
+#include <pthread.h>
+#include <signal.h>        // SIGPIPE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <pthread.h>
-#include <errno.h>
-#include <time.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
+#include <time.h>
+#include <unistd.h>
 
 typedef struct {
     char server_ip[64];
@@ -37,6 +39,17 @@ static double now_sec(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return ts.tv_sec + ts.tv_nsec / 1e9;
+}
+
+/* Optional: tune socket for this workload */
+static void tune_socket(int fd) {
+    int one = 1;
+    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+
+    // Try larger buffers (kernel may clamp)
+    int buf = 4 * 1024 * 1024; // 4MB; you can try 8MB/16MB too
+    setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &buf, sizeof(buf));
+    setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &buf, sizeof(buf));
 }
 
 static int send_all(int fd, const void *buf, size_t len) {
@@ -54,9 +67,11 @@ static int send_all(int fd, const void *buf, size_t len) {
 }
 
 /* recvmsg() until all bytes across iovecs are received */
-static int recvmsg_all(int fd, struct iovec *iov_in, int iovcnt_in) {
-    struct iovec iov[8];
+static int recvmsg_all(int fd, const struct iovec *iov_in, int iovcnt_in) {
     if (iovcnt_in > 8) return -1;
+
+    // Work on a local mutable copy
+    struct iovec iov[8];
     memcpy(iov, iov_in, (size_t)iovcnt_in * sizeof(struct iovec));
     int iovcnt = iovcnt_in;
 
@@ -102,6 +117,8 @@ static void *client_thread(void *arg) {
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) { perror("socket"); return NULL; }
 
+    tune_socket(sock);
+
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
@@ -122,11 +139,13 @@ static void *client_thread(void *arg) {
     size_t base = cfg->msgSize / 8;
     size_t rem  = cfg->msgSize % 8;
 
-    char *field[8];
-    size_t flen[8];
+    char *field[8] = {0};
+    size_t flen[8] = {0};
+
     for (int i = 0; i < 8; i++) {
         flen[i] = base + (i == 7 ? rem : 0);
         if (flen[i] == 0) flen[i] = 1;
+
         field[i] = (char*)malloc(flen[i]);
         if (!field[i]) {
             perror("malloc");
@@ -142,11 +161,10 @@ static void *client_thread(void *arg) {
         iov[i].iov_len  = flen[i];
     }
 
-    // Client sends triggers continuously for 'duration', and receives the server message each iteration
     char trigger[8] = { 'P','I','N','G','P','I','N','G' };
 
     double start = now_sec();
-    double end = start + cfg->duration;
+    double end   = start + cfg->duration;
 
     unsigned long long bytes_rx = 0;
     unsigned long long bytes_tx = 0;
@@ -159,7 +177,7 @@ static void *client_thread(void *arg) {
         bytes_tx += sizeof(trigger);
 
         int rc = recvmsg_all(sock, iov, 8);
-        if (rc == 0) break;          // server closed
+        if (rc == 0) break;                 // server closed
         if (rc < 0) { perror("recvmsg"); break; }
 
         bytes_rx += cfg->msgSize;
@@ -182,6 +200,9 @@ static void *client_thread(void *arg) {
 }
 
 int main(int argc, char **argv) {
+    // Avoid crash on SIGPIPE if server closes while client sends
+    signal(SIGPIPE, SIG_IGN);
+
     if (argc != 6) {
         fprintf(stderr,
             "Usage: %s <server_ip> <port> <msgSize> <threads> <duration_sec>\n", argv[0]);

@@ -1,3 +1,4 @@
+<!--MT25024 -->
 # GRS_PA02 - Network I/O
 ### Course: Graduate Systems (CSE638)
 ### Assignment: PA02 – Network I/O
@@ -8,7 +9,7 @@
 ### Overview
 This section will implement a TCP-based client-server program with the following characteristics:
 - The **server** will be written in a *thread-per-client* manner using `pthread`
-- The client sends an 8-byte trigger message repeatedly; for each trigger, the server sends back an 8-byte fixed-size message of msgSize bytes
+- The client sends an 8-byte trigger; for each trigger, the server sends back a fixed-size response of msgSize bytes
 - The server message is conceptually divided into 8 dynamically allocated (heap-allocated) string fields, meeting the assignment requirement
 - For each trigger, the server packs these 8 heap-allocated fields into a single contiguous buffer in user space and sends it over the network using send(), establishing the two-copy baseline.
 - The client and server run in distinct Linux network namespaces to simulate a distributed setting without virtualization
@@ -80,7 +81,7 @@ Part A2 expands Part A1 by incorporating the server response message through **s
 
 - The **client sends an 8-byte trigger** repeatedly.
 - Each trigger is responded to by the **server with a fixed-size message of `msgSize` bytes**.
-- The server’s message is represented by a **structure with 8 dynamically allocated (heap) string members**, whose total size is `msgSize`.
+- The server’s message is represented by a **structure with 8 dynamically allocated (heap) string buffers/byte arrays**, whose total size is `msgSize`.
 - The server sends the message through **`sendmsg()` with 8 `iovec` arguments** (one for each member).
 - The client receives the message through **`recvmsg()` with 8 `iovec` arguments** (one for each member).
 - The server is **thread-per-client** using `pthread`, and the execution takes place in **separate network namespaces**.
