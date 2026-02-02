@@ -6,11 +6,13 @@
 
 ## Part A1
 ### Overview
-This section will implement a TCP-based client-server program with the following features:
-- The **server** will be implemented in a *thread-per-client* fashion using `pthread`
-- The **client** will send messages of fixed size continuously for a specified period of time
-- Both the client and server programs will run in **separate Linux network namespaces** to simulate a practical distributed environment without the need for virtualization
-- Part A1 implements the TCP client/server skeleton: thread-per-client server + fixed-size message transfer + runtime parameterization + namespaces. The 8-field heap-allocated message structure is implemented in Part A2.
+This section will implement a TCP-based client-server program with the following characteristics:
+- The **server** will be written in a *thread-per-client* manner using `pthread`
+- The **client** will send an 8-byte trigger message repeatedly; the **server** will respond to each iteration with a fixed-size message of `msgSize` bytes
+- The server-side message will be logically organized as **8 dynamically allocated string members (heap-allocated)**, meeting the assignment requirement
+- To optimize performance, the server will **serialize (pack) these 8 members into a single buffer only once per connection**, and then transmit the packed message using `send()` on each trigger
+- The client and server programs will execute in **separate Linux network namespaces** to mimic a real-world distributed setting without virtualization
+- Part A1 will employ only **`send()`/`recv()`** system calls, as mandated
 
 ### Network Namespace Setup
 client and server are run on separate Linux network namespaces
@@ -39,6 +41,9 @@ sudo ip netns exec ns_c ip link set veth_c up
 
 #Verify Connectivity
 sudo ip netns exec ns_c ping -c 1 10.200.1.1
+
+#Check existing namespaces
+ip netns list
 ```
 
 ### Running the Server (A1)
@@ -60,7 +65,7 @@ eg:
 ```bash
 sudo ip netns exec ns_c ./a1_client 10.200.1.1 8989 65536 4 10
 ```
-Each client thread reports throughput at the end of execution.
+Each client thread reports its individual throughput at the end of execution; aggregate throughput is computed by summing throughput across all threads during analysis.
 
 ### Delete the namespaces
 ```bash

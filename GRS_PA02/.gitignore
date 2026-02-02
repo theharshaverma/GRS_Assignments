@@ -2,4 +2,6 @@ a1_server
 a1_client
 a2_client
 a2_server
+a3_server
+a3_client
 *.o

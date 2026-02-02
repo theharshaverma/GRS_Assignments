@@ -20,15 +20,16 @@ were performed independently, with AI used only for conceptual clarification
 and debugging support.
 */
 
+#include <arpa/inet.h>
+#include <errno.h>
+#include <netinet/tcp.h>   // TCP_NODELAY (optional)
+#include <pthread.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <stdbool.h>
-#include <pthread.h>
-#include <errno.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 #define SERVERPORT 8989
 #define BUFSIZE 4096
@@ -39,13 +40,142 @@ typedef struct sockaddr SA;
 
 static size_t g_msgSize = BUFSIZE;   // runtime message size (bytes)
 
-static void *handle_connection(void *arg);
+/* recv exactly len bytes into buf (handles partial recv) */
+static int recv_all(int fd, void *buf, size_t len) {
+    size_t got = 0;
+    while (got < len) {
+        ssize_t r = recv(fd, (char*)buf + got, len - got, 0);
+        if (r == 0) return 0; // closed
+        if (r < 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+        got += (size_t)r;
+    }
+    return 1;
+}
+
+/* send entire buffer (handles partial send) */
+static int send_all(int fd, const void *buf, size_t len) {
+    size_t sent = 0;
+    while (sent < len) {
+        ssize_t n = send(fd, (const char*)buf + sent, len - sent, 0);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+        if (n == 0) return -1;
+        sent += (size_t)n;
+    }
+    return 0;
+}
+
+/* 8-field heap-allocated message */
+typedef struct {
+    char *field[8];
+    size_t flen[8];
+} msg8_t;
+
+static void free_msg8(msg8_t *m) {
+    for (int i = 0; i < 8; i++) {
+        free(m->field[i]);
+        m->field[i] = NULL;
+        m->flen[i] = 0;
+    }
+}
+
+static int alloc_msg8(msg8_t *m, size_t total) {
+    memset(m, 0, sizeof(*m));
+    if (total < 8) return -1;
+
+    size_t base = total / 8;
+    size_t rem  = total % 8;
+
+    for (int i = 0; i < 8; i++) {
+        m->flen[i] = base + ((i == 7) ? rem : 0);
+        if (m->flen[i] == 0) m->flen[i] = 1;
+
+        m->field[i] = (char*)malloc(m->flen[i]);
+        if (!m->field[i]) {
+            free_msg8(m);
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static void fill_msg8(msg8_t *m) {
+    for (int i = 0; i < 8; i++) {
+        memset(m->field[i], 'A' + i, m->flen[i]);
+        if (m->flen[i] > 0) m->field[i][m->flen[i] - 1] = '\0'; // string-like
+    }
+}
+
+static void *handle_connection(void *arg) {
+    int clientSocket = *(int*)arg;
+    free(arg);
+
+    // Optional: reduce latency for small triggers
+    int one = 1;
+    setsockopt(clientSocket, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+
+    // Allocate 8 heap fields once per connection (requirement satisfied)
+    msg8_t m;
+    if (alloc_msg8(&m, g_msgSize) != 0) {
+        perror("alloc_msg8");
+        close(clientSocket);
+        return NULL;
+    }
+
+    char *msgBuf = (char*)malloc(g_msgSize);
+    if (!msgBuf) {
+        perror("malloc msgBuf");
+        free_msg8(&m);
+        close(clientSocket);
+        return NULL;
+    }
+
+    // Precompute message ONCE per connection (fill + pack once)
+    fill_msg8(&m);
+
+    size_t off = 0;
+    for (int i = 0; i < 8; i++) {
+        memcpy(msgBuf + off, m.field[i], m.flen[i]);  // '.' not '->'
+        off += m.flen[i];
+    }
+
+    if (off != g_msgSize) {
+        fprintf(stderr, "[A1 server] pack error: off=%zu msgSize=%zu\n", off, g_msgSize);
+        free(msgBuf);
+        free_msg8(&m);
+        close(clientSocket);
+        return NULL;
+    }
+
+    char trigger[8];
+
+    while (true) {
+        int rc = recv_all(clientSocket, trigger, sizeof(trigger));
+        if (rc == 0) break;                // client closed
+        if (rc < 0) { perror("recv"); break; }
+
+        if (send_all(clientSocket, msgBuf, g_msgSize) < 0) {
+            perror("send");
+            break;
+        }
+    }
+
+    free(msgBuf);
+    free_msg8(&m);
+    close(clientSocket);
+    return NULL;
+}
 
 int main(int argc, char **argv) {
     int serverSocket;
     SA_IN server_addr, client_addr;
 
-    // Allow msg size from CLI: ./server <msgSize>
+    // Allow msg size from CLI: ./a1_server <msgSize>
     if (argc >= 2) {
         long v = strtol(argv[1], NULL, 10);
         if (v > 0) g_msgSize = (size_t)v;
@@ -69,7 +199,6 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    // Avoid "Address already in use" on quick restarts
     int one = 1;
     setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
 
@@ -90,7 +219,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    fprintf(stderr, "[server] listening on port %d, msgSize=%zu bytes\n", SERVERPORT, g_msgSize);
+    fprintf(stderr, "[A1 server] listening on port %d, msgSize=%zu bytes\n", SERVERPORT, g_msgSize);
 
     while (true) {
         socklen_t addr_size = sizeof(SA_IN);
@@ -100,7 +229,6 @@ int main(int argc, char **argv) {
             continue;
         }
 
-        // One thread per client
         pthread_t tid;
         int *pfd = (int*)malloc(sizeof(int));
         if (!pfd) {
@@ -119,41 +247,6 @@ int main(int argc, char **argv) {
         pthread_detach(tid);
     }
 
-    // Unreachable in this infinite server but kept for completeness
     close(serverSocket);
     return 0;
-}
-
-static void *handle_connection(void *arg) {
-    int clientSocket = *(int*)arg;
-    free(arg);
-
-    char *buffer = (char*)malloc(g_msgSize);
-    if (!buffer) {
-        perror("malloc");
-        close(clientSocket);
-        return NULL;
-    }
-
-    // Receive fixed-size messages repeatedly (C2S client sends continuously)
-    while (true) {
-        size_t got = 0;
-        while (got < g_msgSize) {
-            ssize_t r = recv(clientSocket, buffer + got, g_msgSize - got, 0);
-            if (r == 0) {  // client closed
-                free(buffer);
-                close(clientSocket);
-                return NULL;
-            }
-            if (r < 0) {
-                if (errno == EINTR) continue;
-                perror("recv");
-                free(buffer);
-                close(clientSocket);
-                return NULL;
-            }
-            got += (size_t)r;
-        }
-        // One full message received loop again
-    }
 }
