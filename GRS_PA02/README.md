@@ -8,11 +8,11 @@
 ### Overview
 This section will implement a TCP-based client-server program with the following characteristics:
 - The **server** will be written in a *thread-per-client* manner using `pthread`
-- The **client** will send an 8-byte trigger message repeatedly; the **server** will respond to each iteration with a fixed-size message of `msgSize` bytes
-- The server-side message will be logically organized as **8 dynamically allocated string members (heap-allocated)**, meeting the assignment requirement
-- To optimize performance, the server will **serialize (pack) these 8 members into a single buffer only once per connection**, and then transmit the packed message using `send()` on each trigger
-- The client and server programs will execute in **separate Linux network namespaces** to mimic a real-world distributed setting without virtualization
-- Part A1 will employ only **`send()`/`recv()`** system calls, as mandated
+- The client sends an 8-byte trigger message repeatedly; for each trigger, the server sends back an 8-byte fixed-size message of msgSize bytes
+- The server message is conceptually divided into 8 dynamically allocated (heap-allocated) string fields, meeting the assignment requirement
+- For each trigger, the server packs these 8 heap-allocated fields into a single contiguous buffer in user space and sends it over the network using send(), establishing the two-copy baseline.
+- The client and server run in distinct Linux network namespaces to simulate a distributed setting without virtualization
+- Part A1 strictly employs only send() and recv() system calls, as required for the baseline implementation
 
 ### Network Namespace Setup
 client and server are run on separate Linux network namespaces
@@ -76,7 +76,14 @@ sudo ip link del veth_s 2>/dev/null
 
 ## Part A2
 ### Overview
-Part A2 extends Part A1 by implementing a structured server-to-client message using **sendmsg()/recvmsg()** with **scatter–gather I/O (iovec)**. Each message consists of **8 dynamically allocated string fields**.
+Part A2 expands Part A1 by incorporating the server response message through **scatter-gather I/O**:
+
+- The **client sends an 8-byte trigger** repeatedly.
+- Each trigger is responded to by the **server with a fixed-size message of `msgSize` bytes**.
+- The server’s message is represented by a **structure with 8 dynamically allocated (heap) string members**, whose total size is `msgSize`.
+- The server sends the message through **`sendmsg()` with 8 `iovec` arguments** (one for each member).
+- The client receives the message through **`recvmsg()` with 8 `iovec` arguments** (one for each member).
+- The server is **thread-per-client** using `pthread`, and the execution takes place in **separate network namespaces**.
 
 ### Running the Server (A2)
 ```bash
@@ -95,3 +102,4 @@ eg:
 ```bash
 sudo ip netns exec ns_c ./a2_client 10.200.1.1 8989 65536 4 10
 ```
+Each client thread reports its **per-thread receive throughput**; aggregate throughput is the sum across all threads.

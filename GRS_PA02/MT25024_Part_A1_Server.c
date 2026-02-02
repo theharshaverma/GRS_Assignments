@@ -127,6 +127,7 @@ static void *handle_connection(void *arg) {
         return NULL;
     }
 
+    // Single contiguous buffer used for A1 send()
     char *msgBuf = (char*)malloc(g_msgSize);
     if (!msgBuf) {
         perror("malloc msgBuf");
@@ -135,22 +136,9 @@ static void *handle_connection(void *arg) {
         return NULL;
     }
 
-    // Precompute message ONCE per connection (fill + pack once)
+    // Fill message once (content doesn't matter for benchmarking)
+    // The IMPORTANT change is: PACKING happens per-trigger inside the loop.
     fill_msg8(&m);
-
-    size_t off = 0;
-    for (int i = 0; i < 8; i++) {
-        memcpy(msgBuf + off, m.field[i], m.flen[i]);  // '.' not '->'
-        off += m.flen[i];
-    }
-
-    if (off != g_msgSize) {
-        fprintf(stderr, "[A1 server] pack error: off=%zu msgSize=%zu\n", off, g_msgSize);
-        free(msgBuf);
-        free_msg8(&m);
-        close(clientSocket);
-        return NULL;
-    }
 
     char trigger[8];
 
@@ -158,6 +146,17 @@ static void *handle_connection(void *arg) {
         int rc = recv_all(clientSocket, trigger, sizeof(trigger));
         if (rc == 0) break;                // client closed
         if (rc < 0) { perror("recv"); break; }
+
+        // ✅ OPTION A BASELINE: pack 8 heap fields -> one contiguous buffer EVERY trigger
+        size_t off = 0;
+        for (int i = 0; i < 8; i++) {
+            memcpy(msgBuf + off, m.field[i], m.flen[i]);
+            off += m.flen[i];
+        }
+        if (off != g_msgSize) {
+            fprintf(stderr, "[A1 server] pack error: off=%zu msgSize=%zu\n", off, g_msgSize);
+            break;
+        }
 
         if (send_all(clientSocket, msgBuf, g_msgSize) < 0) {
             perror("send");
