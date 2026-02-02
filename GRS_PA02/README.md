@@ -117,7 +117,7 @@ Part A3 adds to Part A2 by supporting **kernel-assisted zero-copy transmission o
 - The server employs a **thread-per-client** approach implemented via `pthread`.
 - The test occurs in **separate Linux network namespaces**, as in Parts A1 and A2.
 
-### Running the Server (A2)
+### Running the Server (A3)
 ```bash
 sudo ip netns exec ns_s ./a3_server <msg_size>
 ```
@@ -126,7 +126,7 @@ eg:
 sudo ip netns exec ns_s ./a3_server 65536
 ```
 
-### Running the Client (A2)
+### Running the Client (A3)
 ```bash
 sudo ip netns exec ns_c ./a3_client <server_ip> <port> <msg_size> <threads> <duration_sec>
 ```
