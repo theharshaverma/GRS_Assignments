@@ -104,3 +104,33 @@ eg:
 sudo ip netns exec ns_c ./a2_client 10.200.1.1 8989 65536 4 10
 ```
 Each client thread reports its **per-thread receive throughput**; aggregate throughput is the sum across all threads.
+
+## Part A3
+### Overview Zero-Copy TCP using `MSG_ZEROCOPY`
+Part A3 adds to Part A2 by supporting **kernel-assisted zero-copy transmission on the server → client data path** via Linux TCP `MSG_ZEROCOPY`.
+
+- The **client sends an 8-byte trigger** repeatedly (same as Part A2).
+- For each trigger, the **server sends a fixed-size message of `msgSize` bytes**.
+- The response message is described as a **structure containing 8 dynamically allocated (heap) buffers**, with a total size of `msgSize`.
+- The server sends the response using **`sendmsg()` with 8 `iovec` entries** and the **`MSG_ZEROCOPY` flag**.
+- The client receives the response using **`recvmsg()` with 8 `iovec` entries** (same client code as Part A2).
+- The server employs a **thread-per-client** approach implemented via `pthread`.
+- The test occurs in **separate Linux network namespaces**, as in Parts A1 and A2.
+
+### Running the Server (A2)
+```bash
+sudo ip netns exec ns_s ./a3_server <msg_size>
+```
+eg: 
+```bash
+sudo ip netns exec ns_s ./a3_server 65536
+```
+
+### Running the Client (A2)
+```bash
+sudo ip netns exec ns_c ./a3_client <server_ip> <port> <msg_size> <threads> <duration_sec>
+```
+eg: 
+```bash
+sudo ip netns exec ns_c ./a3_client 10.200.1.1 8989 65536 4 10
+```
