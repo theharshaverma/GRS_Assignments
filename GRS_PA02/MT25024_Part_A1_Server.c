@@ -147,7 +147,7 @@ static void *handle_connection(void *arg) {
         if (rc == 0) break;                // client closed
         if (rc < 0) { perror("recv"); break; }
 
-        // ✅ OPTION A BASELINE: pack 8 heap fields -> one contiguous buffer EVERY trigger
+        // pack 8 heap fields -> one contiguous buffer EVERY trigger
         size_t off = 0;
         for (int i = 0; i < 8; i++) {
             memcpy(msgBuf + off, m.field[i], m.flen[i]);

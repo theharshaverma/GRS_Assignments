@@ -155,7 +155,7 @@ static void *handle_connection(void *arg) {
         iov[i].iov_len  = m.flen[i];
     }
 
-    // ✅ OPTIMIZATION: fill once per connection (no 64KB memset per trigger)
+    // fill once per connection (no 64KB memset per trigger)
     fill_msg8(&m);
 
     char trigger[8];
