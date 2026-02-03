@@ -161,7 +161,7 @@ eg:
 ```bash
 sudo ip netns exec ns_c ./a1_client 10.200.1.1 8989 65536 4 10
 ```
-Run the client inside the client namespace with perf :
+Run the client inside the client namespace with perf stat profiling enabled:
 ```bash
 sudo ip netns exec ns_c perf stat -e task-clock,context-switches,cpu-migrations,page-faults ./a1_client <server_ip> 8989 <msg_size> <threads> 10
 ```
