@@ -472,4 +472,97 @@ int main(int argc, char **argv) {
 
     free(tids);
     return 0;
+}uration;
+
+    unsigned long long bytes_tx = 0;
+    unsigned long long bytes_rx = 0;
+
+    unsigned long long msg_count = 0;
+    double total_rtt_us = 0.0;
+    double max_rtt_us = 0.0;
+
+    while (now_sec() < end) {
+        struct timespec t1, t2;
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+
+        int sret = send_all(sock, trigger, sizeof(trigger));
+        if (sret == -2) continue;     // timed out, retry until benchmark ends
+        if (sret < 0) { perror("send"); break; }
+        bytes_tx += sizeof(trigger);
+
+        int rc = recv_all_until(sock, msgBuf, cfg->msgSize, end);
+        if (rc == -2) continue;           // retry until duration expires
+        if (rc == 0) break;           // server closed
+        if (rc < 0) { perror("recv"); break; }
+
+        clock_gettime(CLOCK_MONOTONIC, &t2);
+
+        double rtt_us =
+            (t2.tv_sec - t1.tv_sec) * 1e6 +
+            (t2.tv_nsec - t1.tv_nsec) / 1e3;
+
+        total_rtt_us += rtt_us;
+        msg_count++;
+        if (rtt_us > max_rtt_us) max_rtt_us = rtt_us;
+
+        bytes_rx += cfg->msgSize;
+    }
+
+    shutdown(sock, SHUT_WR);
+    close(sock);
+    free(msgBuf);
+
+    double elapsed = now_sec() - start;
+    if (elapsed <= 0) elapsed = 1e-9;
+
+    double gbps_rx = (bytes_rx * 8.0) / (elapsed * 1e9);
+    double avg_rtt_us = (msg_count > 0) ? (total_rtt_us / (double)msg_count) : 0.0;
+
+    fprintf(stderr,
+        "[A1 client thread] rx_bytes=%llu tx_bytes=%llu msgs=%llu time=%.2f sec "
+        "rx_throughput=%.3f Gbps avg_rtt=%.2f us max_rtt=%.2f us\n",
+        bytes_rx, bytes_tx, msg_count, elapsed, gbps_rx, avg_rtt_us, max_rtt_us);
+
+    return NULL;
+}
+
+int main(int argc, char **argv) {
+    if (argc != 6) {
+        fprintf(stderr,
+            "Usage: %s <server_ip> <port> <msgSize> <threads> <duration_sec>\n",
+            argv[0]);
+        return 1;
+    }
+
+    const char *server_ip = argv[1];
+    int port = atoi(argv[2]);
+    size_t msgSize = (size_t)strtoul(argv[3], NULL, 10);
+    int threads = atoi(argv[4]);
+    int duration = atoi(argv[5]);
+
+    if (threads <= 0) { fprintf(stderr, "threads must be > 0\n"); return 1; }
+    if (duration <= 0) { fprintf(stderr, "duration must be > 0\n"); return 1; }
+    if (msgSize < 8) { fprintf(stderr, "Message size must be >= 8 bytes\n"); return 1; }
+
+    pthread_t *tids = (pthread_t*)malloc(sizeof(pthread_t) * (size_t)threads);
+    if (!tids) { perror("malloc"); return 1; }
+
+    client_args_t cfg;
+    snprintf(cfg.server_ip, sizeof(cfg.server_ip), "%s", server_ip);
+    cfg.port = port;
+    cfg.msgSize = msgSize;
+    cfg.duration = duration;
+
+    for (int i = 0; i < threads; i++) {
+        if (pthread_create(&tids[i], NULL, client_thread, &cfg) != 0) {
+            perror("pthread_create");
+            free(tids);
+            return 1;
+        }
+    }
+
+    for (int i = 0; i < threads; i++) pthread_join(tids[i], NULL);
+
+    free(tids);
+    return 0;
 }
