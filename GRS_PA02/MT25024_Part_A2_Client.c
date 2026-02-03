@@ -169,7 +169,15 @@ static void *client_thread(void *arg) {
     unsigned long long bytes_rx = 0;
     unsigned long long bytes_tx = 0;
 
+    /* RTT additions (minimal) */
+    unsigned long long msg_count = 0;
+    double total_rtt_us = 0.0;
+    double max_rtt_us = 0.0;
+
     while (now_sec() < end) {
+        struct timespec t1, t2;
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+
         if (send_all(sock, trigger, sizeof(trigger)) < 0) {
             perror("send");
             break;
@@ -179,6 +187,16 @@ static void *client_thread(void *arg) {
         int rc = recvmsg_all(sock, iov, 8);
         if (rc == 0) break;                 // server closed
         if (rc < 0) { perror("recvmsg"); break; }
+
+        clock_gettime(CLOCK_MONOTONIC, &t2);
+
+        double rtt_us =
+            (t2.tv_sec - t1.tv_sec) * 1e6 +
+            (t2.tv_nsec - t1.tv_nsec) / 1e3;
+
+        total_rtt_us += rtt_us;
+        if (rtt_us > max_rtt_us) max_rtt_us = rtt_us;
+        msg_count++;
 
         bytes_rx += cfg->msgSize;
     }
@@ -192,9 +210,12 @@ static void *client_thread(void *arg) {
     if (elapsed <= 0) elapsed = 1e-9;
 
     double gbps_rx = (bytes_rx * 8.0) / (elapsed * 1e9);
+    double avg_rtt_us = (msg_count > 0) ? (total_rtt_us / msg_count) : 0.0;
+
     fprintf(stderr,
-            "[A2 client thread] rx_bytes=%llu tx_bytes=%llu time=%.2f sec rx_throughput=%.3f Gbps\n",
-            bytes_rx, bytes_tx, elapsed, gbps_rx);
+            "[A2 client thread] rx_bytes=%llu tx_bytes=%llu msgs=%llu time=%.2f sec "
+            "rx_throughput=%.3f Gbps avg_rtt=%.2f us max_rtt=%.2f us\n",
+            bytes_rx, bytes_tx, msg_count, elapsed, gbps_rx, avg_rtt_us, max_rtt_us);
 
     return NULL;
 }
