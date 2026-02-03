@@ -29,6 +29,7 @@ and debugging support.
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/time.h>      // timeval
 #include <unistd.h>
 
 #define SERVERPORT 8989
@@ -55,13 +56,18 @@ static int recv_all(int fd, void *buf, size_t len) {
     return 1;
 }
 
-/* send entire buffer (handles partial send) */
+/*
+ * send entire buffer (handles partial send)
+ * Uses MSG_NOSIGNAL so server is not killed by SIGPIPE.
+ * Also handles SO_SNDTIMEO timeout as a graceful failure.
+ */
 static int send_all(int fd, const void *buf, size_t len) {
     size_t sent = 0;
     while (sent < len) {
-        ssize_t n = send(fd, (const char*)buf + sent, len - sent, 0);
+        ssize_t n = send(fd, (const char*)buf + sent, len - sent, MSG_NOSIGNAL);
         if (n < 0) {
             if (errno == EINTR) continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) return -1; // timed out
             return -1;
         }
         if (n == 0) return -1;
@@ -119,6 +125,12 @@ static void *handle_connection(void *arg) {
     int one = 1;
     setsockopt(clientSocket, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
 
+    // Prevent a stuck send() if client stops reading
+    struct timeval tv;
+    tv.tv_sec = 1;
+    tv.tv_usec = 0;
+    setsockopt(clientSocket, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
     // Allocate 8 heap fields once per connection (requirement satisfied)
     msg8_t m;
     if (alloc_msg8(&m, g_msgSize) != 0) {
@@ -136,8 +148,6 @@ static void *handle_connection(void *arg) {
         return NULL;
     }
 
-    // Fill message once (content doesn't matter for benchmarking)
-    // The IMPORTANT change is: PACKING happens per-trigger inside the loop.
     fill_msg8(&m);
 
     char trigger[8];
@@ -159,7 +169,7 @@ static void *handle_connection(void *arg) {
         }
 
         if (send_all(clientSocket, msgBuf, g_msgSize) < 0) {
-            perror("send");
+            // client may have stopped reading / closed; exit this thread cleanly
             break;
         }
     }
@@ -174,13 +184,11 @@ int main(int argc, char **argv) {
     int serverSocket;
     SA_IN server_addr, client_addr;
 
-    // Allow msg size from CLI: ./a1_server <msgSize>
     if (argc >= 2) {
         long v = strtol(argv[1], NULL, 10);
         if (v > 0) g_msgSize = (size_t)v;
     }
 
-    // Validate runtime message size
     if (g_msgSize < 8) {
         fprintf(stderr, "ERROR: Message size must be at least 8 bytes (got %zu)\n", g_msgSize);
         return 1;
