@@ -136,26 +136,29 @@ sudo ip netns exec ns_c ./a3_client 10.200.1.1 8989 65536 4 10
 ```
 
 ## Part B
-In Part B, we examine the performance characteristics of the client application through CPU and system-level profiling of CPU message exchange experiments. Because all experiments were run within a VirtualBox virtual machine, direct hardware access to performance monitoring units (PMUs) was not possible. Consequently, profiling was carried out using software counters available through perf stat.
+Part B deals with profiling and performance evaluation of the client application during the TCP message exchange process. All experiments were performed using Linux network namespaces (ns_c for client and ns_s for server) on the same machine to ensure that the client and server run in separate environments while still allowing access to system performance counters. 
 
-The experiments evaluate application-level throughput and latency, as well as system-level metrics such as task-clock (CPU time), context switches, CPU migrations, and page faults. Throughput is calculated as the total amount of data received by the client (summed across all threads) divided by the runtime in Gbps. Latency is measured as the round-trip time (RTT) per message using clock_gettime(CLOCK_MONOTONIC) at the client.
+Application-level performance metrics include throughput and latency, while system-level behavior is analyzed using perf stat. Profiling was done on the entire client process, measuring counters aggregated across all client threads.
 
-The profiling was carried out for varying message sizes and thread counts to examine the effect of message granularity and concurrency on performance. The results obtained can be used to interpret scalability trends, including throughput saturation, increased latency, and higher context-switch costs with increasing thread counts.
+Throughput is calculated as the total amount of data received by the client, summed across all threads, divided by the total execution time and measured in Gbps. Latency is measured as the round-trip time (RTT) per message using clock_gettime(CLOCK_MONOTONIC) at the client; both average and maximum latency are reported to capture steady-state performance and scheduling-induced latency spikes.
 
-### Running the Server (A1)
+System-level metrics collected using perf stat include CPU cycles, cache misses, context switches, CPU migrations, and page faults. For hybrid CPUs, perf stat provides counters for performance cores (cpu_core) and efficiency cores (cpu_atom); total CPU cycles and cache misses are calculated as the sum of the corresponding core and atom values.
+
+Experiments were performed across multiple message sizes and thread counts to study scalability trends, including throughput saturation, latency variation, and increased scheduling overhead under higher concurrency.
+### Running the Server 
 Running the the server inside the server namespace:
 ```bash
-sudo ip netns exec ns_s ./a1_server <msg_size>
+sudo ip netns exec ns_s ./a<part_no>_server <msg_size>
 ```
 eg: 
 ```bash
 sudo ip netns exec ns_s ./a1_server 65536
 ```
 
-### Running the Client (A1)
+### Running the Client 
 Run the client inside the client namespace without perf :
 ```bash
-sudo ip netns exec ns_c ./a1_client <server_ip> 8989 <msg_size> <threads> <duration_sec>
+sudo ip netns exec ns_c ./a<part_no>_client <server_ip> 8989 <msg_size> <threads> <duration_sec>
 ```
 eg:
 ```bash
@@ -163,9 +166,9 @@ sudo ip netns exec ns_c ./a1_client 10.200.1.1 8989 65536 4 10
 ```
 Run the client inside the client namespace with perf stat profiling enabled:
 ```bash
-sudo ip netns exec ns_c perf stat -e task-clock,context-switches,cpu-migrations,page-faults ./a1_client <server_ip> 8989 <msg_size> <threads> 10
+sudo ip netns exec ns_c perf stat -e task-clock,context-switches,cpu-migrations,page-faults ./a<part_no>_client <server_ip> 8989 <msg_size> <threads> 10
 ```
 eg:
 ```bash
-sudo ip netns exec ns_c perf stat -e task-clock,context-switches,cpu-migrations,page-faults ./a1_client 10.200.1.1 8989 65536 4 10
+sudo ip netns exec ns_c perf stat -e cycles,cache-misses,context-switches ./a1_client 10.200.1.1 8989 65536 6 10
 ```
