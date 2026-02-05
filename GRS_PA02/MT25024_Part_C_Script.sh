@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Roll No- MT25024
-# GRS PA02 - Part C: automated runs + perf + CSV
-# AI USAGE DECLARATION – MT25024_Part_C.sh (PA02, Graduate Systems)
+# GRS PA02 - Part C: automated runs + perf (SERVER namespace) + CSV
+# AI USAGE DECLARATION – MT25024_Part_C_Script.sh (PA02, Graduate Systems)
 #
 # AI tools (ChatGPT) were used as a supportive aid for Part C in the following ways:
 # - Designing an automated experimental workflow to repeatedly run A1, A2, and A3
@@ -11,19 +11,18 @@
 # - Automating client–server execution with warm-up runs followed by perf stat
 #   profiling to reduce cold-start measurement noise
 # - Parsing application-level output (throughput and RTT) using awk and shell tools
-# - Parsing perf stat output on hybrid CPUs by aggregating cpu_core and cpu_atom
-#   counters for cpu-cycles and cache-misses
+# - Parsing perf stat output by summing counters (and handling hybrid CPU formats)
 # - Generating a consolidated CSV file suitable for plotting and further analysis
 #
 # Representative prompts used include:
 # - "Write a bash script to automate perf stat experiments across parameters"
-# - "How to parse perf stat output on hybrid CPUs (cpu_core / cpu_atom)"
+# - "How to run perf stat on a server process running in another network namespace"
+# - "How to parse perf stat output and extract cycles/context-switches/L1/LLC misses"
 # - "How to aggregate throughput and RTT from multi-threaded client output"
 # - "How to safely manage Linux network namespaces in shell scripts"
 #
 # All script logic was reviewed, understood, and adapted to match the exact
 # PA02 setup, binary names, argument formats, and output structure.
-# The final script was tested and validated manually on the target machine.
 
 set -euo pipefail
 
@@ -33,15 +32,16 @@ set -euo pipefail
 SERVER_IP="10.200.1.1"
 PORT="8989"
 
-# >= 4 message sizes + >= 4 thread counts (edit if needed)
+# >= 4 message sizes + >= 4 thread counts
 MSG_SIZES=(8192 16384 32768 65536)
 THREADS=(4 6 8 12)
 
 DUR=10
 WARMUP=2
 
-# Match your manual perf runs exactly
-EVENTS="cpu-cycles,cache-misses,context-switches"
+# IMPORTANT: perf must run in SERVER namespace (ns_s).
+# Required metrics in assignment: CPU cycles, cache misses (L1, LLC), context switches.
+EVENTS="cycles,context-switches,L1-dcache-load-misses,LLC-load-misses"
 
 OUTDIR="results"
 CSV="${OUTDIR}/MT25024_partC_results.csv"
@@ -54,6 +54,7 @@ PARTS=(1 2 3)   # A1, A2, A3
 cleanup_netns() {
   sudo ip netns del ns_s 2>/dev/null || true
   sudo ip netns del ns_c 2>/dev/null || true
+  # veth gets removed when netns is deleted; keep these harmless just in case.
   sudo ip link del veth_s 2>/dev/null || true
   sudo ip link del veth_c 2>/dev/null || true
 }
@@ -84,7 +85,7 @@ start_server() {
   local msg="$2"
   local bin="a${part}_server"
 
-  # start in background inside ns_s, echo PID
+  # Start in background inside ns_s and echo PID
   sudo ip netns exec ns_s bash -lc "./${bin} ${msg} > /dev/null 2>&1 & echo \$!"
 }
 
@@ -97,12 +98,12 @@ stop_server() {
 # Parsing helpers
 ############################
 
-# Aggregates across all thread lines:
-# - total_rx_bytes (sum)
-# - aggregate throughput = sum of per-thread throughputs
-# - avg_rtt = average of per-thread avg_rtt
-# - max_rtt = max across threads
-# - time_sec = (last seen) time=...
+# Aggregates across all client thread lines:
+# total_rx_bytes = sum
+# agg_throughput_gbps = sum of per-thread throughputs
+# avg_rtt_us = average of per-thread avg_rtt
+# max_rtt_us = max across threads
+# time_sec = last seen time=...
 parse_client() {
   local f="$1"
   awk '
@@ -121,18 +122,18 @@ parse_client() {
   ' "$f"
 }
 
-# Parse perf stat output:
-# Sum cpu_atom + cpu_core values for cpu-cycles and cache-misses.
-# context-switches appears as a single line (sum anyway).
+# Parse perf stat output (SERVER namespace):
+# We sum any matching event lines (handles hybrid CPUs where cycles may appear as cpu_core/cycles/ etc).
 parse_perf() {
   local f="$1"
   awk '
     function n(s){ gsub(/,/,"",s); return s+0; }
-    BEGIN{cycles=0; misses=0; cs=0;}
-    /cpu-cycles\// { cycles += n($1); }
-    /cache-misses\// { misses += n($1); }
-    /context-switches/ { cs += n($1); }
-    END{ printf "%.0f,%.0f,%.0f\n", cycles, misses, cs; }
+    BEGIN{cycles=0; cs=0; l1m=0; llcm=0;}
+    /(^|[[:space:]])cycles([[:space:]]|$|\/)/              { cycles += n($1); }
+    /context-switches/                                     { cs     += n($1); }
+    /L1-dcache-load-misses/                                { l1m    += n($1); }
+    /LLC-load-misses/                                      { llcm   += n($1); }
+    END{ printf "%.0f,%.0f,%.0f,%.0f\n", cycles, l1m, llcm, cs; }
   ' "$f"
 }
 
@@ -141,7 +142,7 @@ parse_perf() {
 ############################
 mkdir -p "$OUTDIR"
 
-echo "part,msg_size,threads,duration_sec,total_rx_bytes,agg_throughput_gbps,avg_rtt_us,max_rtt_us,time_sec,total_cpu_cycles,total_cache_misses,context_switches" > "$CSV"
+echo "part,msg_size,threads,duration_sec,total_rx_bytes,agg_throughput_gbps,avg_rtt_us,max_rtt_us,time_sec,server_cycles,server_L1_dcache_load_misses,server_LLC_load_misses,server_context_switches" > "$CSV"
 
 echo "[INFO] Build..."
 make clean >/dev/null
@@ -163,19 +164,28 @@ for p in "${PARTS[@]}"; do
       sudo ip netns exec ns_c "./a${p}_client" "$SERVER_IP" "$PORT" "$m" "$t" "$WARMUP" \
         > "${OUTDIR}/warm_${tag}.log" 2>&1 || true
 
-      # Perf run
+      # PERF ON SERVER PROCESS (ns_s), while client runs normally (ns_c)
       app_log="${OUTDIR}/app_${tag}.log"
-      perf_log="${OUTDIR}/perf_${tag}.txt"
+      perf_log="${OUTDIR}/perf_server_${tag}.txt"
 
-      sudo ip netns exec ns_c perf stat -e "$EVENTS" "./a${p}_client" "$SERVER_IP" "$PORT" "$m" "$t" "$DUR" \
-        > "$app_log" 2> "$perf_log"
+      # Start perf in background, attached to server PID, for DUR seconds.
+      # Output goes to perf_log (stderr).
+      sudo ip netns exec ns_s perf stat -e "$EVENTS" -p "$spid" -- sleep "$DUR" \
+        > /dev/null 2> "$perf_log" &
+      perf_pid=$!
 
+      # Run client for DUR seconds (stdout+stderr -> app_log)
+      sudo ip netns exec ns_c "./a${p}_client" "$SERVER_IP" "$PORT" "$m" "$t" "$DUR" \
+        > "$app_log" 2>&1 || true
+
+      # Wait for perf to finish, then stop server
+      wait "$perf_pid" 2>/dev/null || true
       stop_server "$spid"
 
       IFS=',' read -r total_rx agg_thr avg_rtt max_rtt time_sec < <(parse_client "$app_log")
-      IFS=',' read -r cycles misses ctxsw < <(parse_perf "$perf_log")
+      IFS=',' read -r cycles l1m llcm ctxsw < <(parse_perf "$perf_log")
 
-      echo "${p},${m},${t},${DUR},${total_rx},${agg_thr},${avg_rtt},${max_rtt},${time_sec},${cycles},${misses},${ctxsw}" >> "$CSV"
+      echo "${p},${m},${t},${DUR},${total_rx},${agg_thr},${avg_rtt},${max_rtt},${time_sec},${cycles},${l1m},${llcm},${ctxsw}" >> "$CSV"
     done
   done
 done
