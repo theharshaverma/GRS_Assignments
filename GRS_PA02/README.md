@@ -224,6 +224,7 @@ perf stats is used and it is appended to the server process:
 - L1 d-cache load
 - LLC-load-misses(cpu_core + cpu_atom
 - Context switches
+
 All results are aggregated and written into a single consolidated CSV file:
 MT25024_Part_C_CSV.csv
 Each row is an individual experimental configuration. It is immediately useful without change in the tables and sections in Part B of the report. Intermediate log files are not committed because they are unnecessary clutter in the repository; all the results can be reproduced by rerunning the script.
