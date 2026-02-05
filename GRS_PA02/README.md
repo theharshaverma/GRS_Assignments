@@ -211,3 +211,24 @@ eg:
 ```bash
 sudo ip netns exec ns_c ./a1_client 10.200.1.1 8989 65536 4 10
 ```
+## Part C Automated Experiments and CSV Generation
+Part C employs automation for the experimental evaluation of Part A1, A2, and A3 through the application of a shell script: MT25024_Part_C_Script.sh. This script varies the implementation type, message size, as well as the thread count while keeping the execution duration fixed.
+For each run:
+The server is executed inside ns_s.
+The client is executed within ns_c and measures application-level metrics:
+- Aggregate throughput
+- Average RTT
+- Maximum RTT
+perf stats is used and it is appended to the server process:
+- CPU cycles (cpu_core + cpu_atom)
+- L1 d-cache load
+- LLC-load-misses(cpu_core + cpu_atom
+- Context switches
+All results are aggregated and written into a single consolidated CSV file:
+MT25024_Part_C_CSV.csv
+Each row is an individual experimental configuration. It is immediately useful without change in the tables and sections in Part B of the report. Intermediate log files are not committed because they are unnecessary clutter in the repository; all the results can be reproduced by rerunning the script.
+To Reproduce:
+```bash
+chmod +x MT25024_Part_C_Script.sh
+sudo ./MT25024_Part_C_Script.sh
+```
