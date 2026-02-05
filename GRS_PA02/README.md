@@ -136,15 +136,58 @@ sudo ip netns exec ns_c ./a3_client 10.200.1.1 8989 65536 4 10
 ```
 
 ## Part B
-Part B deals with profiling and performance evaluation of the client application during the TCP message exchange process. All experiments were performed using Linux network namespaces (ns_c for client and ns_s for server) on the same machine to ensure that the client and server run in separate environments while still allowing access to system performance counters. 
+Part B is concerned with profiling and performance analysis of the TCP-based implementations from Parts A1, A2, and A3. All experiments were conducted using Linux network namespaces (`ns_c` for client and `ns_s` for server) on the same machine to isolate the execution of the client and server while still allowing access to hardware performance counters.
 
-Application-level performance metrics include throughput and latency, while system-level behavior is analyzed using perf stat. Profiling was done on the client process and server process.
+Application-level performance metrics include **throughput and latency**, measured at the **client**, while system-level dynamics are analyzed using **`perf stat`**, mainly focused on the **server process** to analyze the CPU and memory subsystem costs of data transmission.
 
-Throughput is calculated as the total amount of data received by the client, summed across all threads, divided by the total execution time and measured in Gbps. Latency is measured as the round-trip time (RTT) per message using clock_gettime(CLOCK_MONOTONIC) at the client; both average and maximum latency are reported to capture steady-state performance and scheduling-induced latency spikes.
+### Application-Level Metrics (Client-Side)
+**Throughput** is computed as the total data received by the client, summed across all threads, divided by the total time taken and expressed in Gbps:
+Total bytes = sum of rx_bytes (across all client threads)
+Throughput (Gbps) = (Total bytes × 8) / (time × 10⁹)
 
-System-level metrics collected using perf stat include CPU cycles, cache misses, context switches, CPU migrations, and page faults. For hybrid CPUs, perf stat provides counters for performance cores (cpu_core) and efficiency cores (cpu_atom); total CPU cycles and cache misses are calculated as the sum of the corresponding core and atom values.
+The client threads report their received bytes and the time taken; the throughput values shown in the tables are the **total across all threads**.
 
-Experiments were performed across multiple message sizes and thread counts to study scalability trends, including throughput saturation, latency variation, and increased scheduling overhead under higher concurrency.
+**Latency** is measured as the **round-trip time (RTT)** per message at the client:
+- A timestamp is taken immediately before sending the 8-byte trigger.
+- A second timestamp is taken after the full response is received.
+- RTT is computed using `clock_gettime(CLOCK_MONOTONIC)`.
+
+Both **average latency** and **maximum latency** are reported. Average latency reflects steady-state performance, while maximum latency captures tail effects due to OS scheduling, interrupt handling, and kernel TCP processing.
+
+### System-Level Metrics (PMU Profiling)
+
+System-level metrics are collected using `perf stat` while profiling the **server process** running inside `ns_s`. Profiling the server captures the CPU, cache, and scheduling costs of message transmission and kernel-level data movement.
+
+The following metrics are reported:
+
+#### CPU Cycles / CPU Time
+CPU utilization is measured using hardware and software counters:
+- `task-clock` measures total CPU time consumed by the server process.
+- `cpu-cycles` measures hardware execution cycles.
+
+On hybrid CPUs, `perf stat` reports cycles separately for:
+- Performance cores (`cpu_core`)
+- Efficiency cores (`cpu_atom`)
+
+For reporting aggregate CPU cost: Total CPU Cycles = cpu_core_cycles + cpu_atom_cycles
+#### Cache Misses
+The cache activity is measured by using cache miss events provided by the platform:
+
+- **L1 Data Cache Misses**  
+  `L1-dcache-load-misses` are available **only for cpu_core** on this machine.  
+  Hence, L1 cache misses are measured **only for cpu_core**.
+
+- **Last-Level Cache (LLC) Misses**  
+  `LLC-load-misses` are available for both cpu_core and cpu_atom.  
+  Total LLC misses are calculated as: Total LLC-load-misses = LLC-load-misses(cpu_core) + LLC-load-misses(cpu_atom)
+
+The LLC misses give a very good sense of the memory traffic and cache pressure, and are especially useful when comparing two-copy, one-copy, and zero-copy code.
+
+#### Context Switches and Other Metrics
+Context switches are measured via the `context-switches` counter of `perf stat`. A higher number of context switches is an indication of higher scheduling overhead due to higher thread concurrency.
+
+CPU migrations and page faults were also tracked. Page faults are mainly an indication of the initial memory allocation overhead, and there was no memory thrashing in the steady-state execution.
+  
 ### Running the Server 
 Running the the server inside the server namespace:
 ```bash
