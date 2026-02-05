@@ -219,7 +219,7 @@ The client is executed within ns_c and measures application-level metrics:
 - Aggregate throughput
 - Average RTT
 - Maximum RTT
-
+---
 perf stats is used and it is appended to the server process:
 - CPU cycles (cpu_core + cpu_atom)
 - L1 d-cache load
