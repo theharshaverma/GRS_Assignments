@@ -138,7 +138,7 @@ sudo ip netns exec ns_c ./a3_client 10.200.1.1 8989 65536 4 10
 ## Part B
 Part B deals with profiling and performance evaluation of the client application during the TCP message exchange process. All experiments were performed using Linux network namespaces (ns_c for client and ns_s for server) on the same machine to ensure that the client and server run in separate environments while still allowing access to system performance counters. 
 
-Application-level performance metrics include throughput and latency, while system-level behavior is analyzed using perf stat. Profiling was done on the entire client process, measuring counters aggregated across all client threads.
+Application-level performance metrics include throughput and latency, while system-level behavior is analyzed using perf stat. Profiling was done on the client process and server process.
 
 Throughput is calculated as the total amount of data received by the client, summed across all threads, divided by the total execution time and measured in Gbps. Latency is measured as the round-trip time (RTT) per message using clock_gettime(CLOCK_MONOTONIC) at the client; both average and maximum latency are reported to capture steady-state performance and scheduling-induced latency spikes.
 
@@ -154,7 +154,11 @@ eg:
 ```bash
 sudo ip netns exec ns_s ./a1_server 65536
 ```
-
+Run the server inside the client namespace with perf stat profiling enabled:
+```bash
+sudo ip netns exec ns_s perf stat -p <server_pid> -e \
+cycles,context-switches,L1-dcache-load-misses,LLC-load-misses -- sleep <duration_sec>
+```
 ### Running the Client 
 Run the client inside the client namespace without perf :
 ```bash
@@ -163,12 +167,4 @@ sudo ip netns exec ns_c ./a<part_no>_client <server_ip> 8989 <msg_size> <threads
 eg:
 ```bash
 sudo ip netns exec ns_c ./a1_client 10.200.1.1 8989 65536 4 10
-```
-Run the client inside the client namespace with perf stat profiling enabled:
-```bash
-sudo ip netns exec ns_c perf stat -e task-clock,context-switches,cpu-migrations,page-faults ./a<part_no>_client <server_ip> 8989 <msg_size> <threads> 10
-```
-eg:
-```bash
-sudo ip netns exec ns_c perf stat -e cycles,cache-misses,context-switches ./a1_client 10.200.1.1 8989 65536 6 10
 ```
