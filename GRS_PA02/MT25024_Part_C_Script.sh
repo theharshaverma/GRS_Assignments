@@ -51,7 +51,7 @@ WARMUP=2
 EVENTS="cycles,context-switches,L1-dcache-load-misses,LLC-load-misses"
 
 OUTDIR="results"
-CSV="${OUTDIR}/MT25024_partC_results_variation_each_part.csv"
+CSV="${OUTDIR}/MT25024_Part_C_CSV.csv"
 
 # A1, A2, A3
 PARTS=(1 2 3)
