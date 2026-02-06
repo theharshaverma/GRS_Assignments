@@ -234,3 +234,8 @@ To Reproduce:
 chmod +x MT25024_Part_C_Script.sh
 sudo ./MT25024_Part_C_Script.sh
 ```
+## Par D
+Run the plot code:
+```bash
+python3 MT25024_Part_D_Plots.py
+```
