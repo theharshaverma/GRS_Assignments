@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # ============================================================
 # AI USAGE DECLARATION – MT25024_Part_C_Script.sh
 # Course: Graduate Systems (CSE638)
@@ -29,7 +30,6 @@
 # The script was reviewed, modified, and fully understood before submission.
 #
 # ============================================================
-#!/usr/bin/env bash
 # Roll No- MT25024
 # GRS PA02 - Part C: automated runs + perf (SERVER namespace) + CSV
 # 8 runs per part:
@@ -51,7 +51,7 @@ WARMUP=2
 EVENTS="cycles,context-switches,L1-dcache-load-misses,LLC-load-misses"
 
 OUTDIR="results"
-CSV="${OUTDIR}/MT25024_Part_C_CSV.csv"
+CSV="MT25024_Part_C_CSV.csv"
 
 # A1, A2, A3
 PARTS=(1 2 3)

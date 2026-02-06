@@ -5,3 +5,19 @@ a2_server
 a3_server
 a3_client
 *.o
+*.out
+
+# logs / perf outputs (generated)
+logs/
+*.log
+*.txt
+
+# python junk
+__pycache__/
+*.pyc
+
+# plots should NOT be submitted as PNG/JPEG/PDF (plots only in report)
+*.png
+*.jpg
+*.jpeg
+*.pdf
